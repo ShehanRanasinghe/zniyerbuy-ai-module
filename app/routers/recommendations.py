@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
+from app.database import get_user_interactions, get_products
 from sklearn.neighbors import NearestNeighbors
 
 router = APIRouter()
@@ -25,13 +26,15 @@ products = {
 }
 
 def build_model():
-    df = pd.DataFrame(interaction_data)
-    user_product_matrix = df.pivot_table(
-        index="user_id", columns="product_id", values="rating", fill_value=0
-    )
-    model = NearestNeighbors(metric="cosine", algorithm="brute", n_neighbors=3)
-    model.fit(user_product_matrix.values)
-    return model, user_product_matrix
+   def get_data():
+    db_interactions = get_user_interactions()
+    db_products = get_products()
+
+    if db_interactions:
+        return db_interactions, {p["id"]: p for p in db_products}
+    
+    # Fallback to mock data if Supabase is empty
+    return interaction_data, products
 
 model, user_product_matrix = build_model()
 
