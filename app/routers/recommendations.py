@@ -1,96 +1,183 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 from app.database import get_user_interactions, get_products
 from sklearn.neighbors import NearestNeighbors
+from typing import Optional
 
 router = APIRouter()
-
-# Mock user-product interaction data (will be replaced with Supabase data in task 7.2)
-interaction_data = {
-    "user_id": [1, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5],
-    "product_id": [101, 102, 103, 101, 104, 102, 103, 105, 101, 105, 103, 104],
-    "rating": [5, 4, 3, 4, 5, 3, 4, 5, 2, 4, 5, 3],
-}
-
-products = {
-    101: {"name": "Samba Rice 5kg", "category": "Rice & Grains", "price": 1450},
-    102: {"name": "Ceylon Pepper 100g", "category": "Spices", "price": 380},
-    103: {"name": "Green Tomatoes 1kg", "category": "Vegetables", "price": 220},
-    104: {"name": "Anchor Milk Powder 400g", "category": "Dairy", "price": 1890},
-    105: {"name": "Kurakkan Flour 1kg", "category": "Rice & Grains", "price": 560},
-    106: {"name": "Coconut Oil 500ml", "category": "Cooking Oils", "price": 760},
-    107: {"name": "Dhal 1kg", "category": "Rice & Grains", "price": 420},
-    108: {"name": "Gotukola Bundles", "category": "Vegetables", "price": 60},
-}
-
-def build_model():
-   def get_data():
-    db_interactions = get_user_interactions()
-    db_products = get_products()
-
-    if db_interactions:
-        return db_interactions, {p["id"]: p for p in db_products}
-    
-    # Fallback to mock data if Supabase is empty
-    return interaction_data, products
-
-model, user_product_matrix = build_model()
 
 class RecommendationRequest(BaseModel):
     user_id: int
     top_n: int = 5
 
+def build_recommendation_model(interactions_data, products_data):
+    """
+    Build collaborative filtering model from user interaction data.
+    Returns model and user-product matrix.
+    """
+    try:
+        if not interactions_data or len(interactions_data) == 0:
+            return None, None
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(interactions_data)
+        
+        # Create user-product matrix
+        user_product_matrix = df.pivot_table(
+            index='user_id',
+            columns='product_id',
+            values='rating',
+            fill_value=0
+        )
+        
+        # Build KNN model
+        model = NearestNeighbors(metric='cosine', algorithm='brute')
+        model.fit(user_product_matrix.values)
+        
+        return model, user_product_matrix
+    except Exception as e:
+        print(f"Error building recommendation model: {e}")
+        return None, None
+
 @router.get("/products")
 def get_recommendations(user_id: int = 1, top_n: int = 5):
+    """
+    Get personalized product recommendations for a user.
+    Uses collaborative filtering based on user interactions.
+    Falls back to popular products if no interaction data exists.
+    """
     try:
-        if user_id not in user_product_matrix.index:
-            # New user — return top rated products
+        # Fetch data from Supabase
+        interactions_data = get_user_interactions()
+        products_data = get_products()
+        
+        if not products_data or len(products_data) == 0:
+            raise HTTPException(status_code=503, detail="No products available in database")
+        
+        # Convert products to dict for easy lookup
+        products_dict = {p["id"]: p for p in products_data}
+        
+        # If no interaction data, return popular products
+        if not interactions_data or len(interactions_data) == 0:
+            # Sort by views or favorites_count if available
+            sorted_products = sorted(
+                products_data,
+                key=lambda x: x.get('views', 0) + x.get('favorites_count', 0) * 2,
+                reverse=True
+            )[:top_n]
+            
             return {
                 "user_id": user_id,
                 "recommendations": [
-                    {"product_id": pid, **info}
-                    for pid, info in list(products.items())[:top_n]
+                    {
+                        "product_id": p["id"],
+                        "name": p.get("name", "Unknown"),
+                        "category": p.get("category", "General"),
+                        "price": p.get("price", 0),
+                        "views": p.get("views", 0),
+                        "favorites_count": p.get("favorites_count", 0)
+                    }
+                    for p in sorted_products
                 ],
-                "method": "popular"
+                "method": "popular_products",
+                "note": "No interaction data available, showing popular products"
             }
-
+        
+        # Build recommendation model
+        model, user_product_matrix = build_recommendation_model(interactions_data, products_data)
+        
+        if model is None or user_product_matrix is None:
+            raise HTTPException(status_code=500, detail="Failed to build recommendation model")
+        
+        # Check if user exists in interaction data
+        if user_id not in user_product_matrix.index:
+            # New user - return popular products
+            sorted_products = sorted(
+                products_data,
+                key=lambda x: x.get('views', 0) + x.get('favorites_count', 0) * 2,
+                reverse=True
+            )[:top_n]
+            
+            return {
+                "user_id": user_id,
+                "recommendations": [
+                    {
+                        "product_id": p["id"],
+                        "name": p.get("name", "Unknown"),
+                        "category": p.get("category", "General"),
+                        "price": p.get("price", 0)
+                    }
+                    for p in sorted_products
+                ],
+                "method": "popular_products",
+                "note": "New user, showing popular products"
+            }
+        
+        # Get user's vector and find similar users
         user_idx = user_product_matrix.index.get_loc(user_id)
         user_vector = user_product_matrix.iloc[user_idx].values.reshape(1, -1)
-        distances, indices = model.kneighbors(user_vector)
-
+        distances, indices = model.kneighbors(user_vector, n_neighbors=min(6, len(user_product_matrix)))
+        
+        # Get similar users (excluding the user themselves)
         similar_users = [
             user_product_matrix.index[i]
             for i in indices.flatten()
             if user_product_matrix.index[i] != user_id
         ]
-
+        
+        # Get products already rated by the user
         already_rated = set(
             user_product_matrix.columns[user_product_matrix.loc[user_id] > 0]
         )
-
+        
+        # Find products rated by similar users but not by current user
         recommended = []
         for similar_user in similar_users:
             rated_by_similar = set(
                 user_product_matrix.columns[user_product_matrix.loc[similar_user] > 0]
             )
             new_products = rated_by_similar - already_rated
+            
             for pid in new_products:
-                if pid in products and len(recommended) < top_n:
-                    recommended.append({"product_id": int(pid), **products[pid]})
-
-        if not recommended:
-            recommended = [
-                {"product_id": pid, **info}
-                for pid, info in list(products.items())[:top_n]
-            ]
-
+                if pid in products_dict and len(recommended) < top_n:
+                    product = products_dict[pid]
+                    recommended.append({
+                        "product_id": pid,
+                        "name": product.get("name", "Unknown"),
+                        "category": product.get("category", "General"),
+                        "price": product.get("price", 0)
+                    })
+        
+        # If not enough recommendations, fill with popular products
+        if len(recommended) < top_n:
+            remaining = top_n - len(recommended)
+            recommended_ids = {r["product_id"] for r in recommended}
+            
+            sorted_products = sorted(
+                [p for p in products_data if p["id"] not in recommended_ids and p["id"] not in already_rated],
+                key=lambda x: x.get('views', 0) + x.get('favorites_count', 0) * 2,
+                reverse=True
+            )[:remaining]
+            
+            for p in sorted_products:
+                recommended.append({
+                    "product_id": p["id"],
+                    "name": p.get("name", "Unknown"),
+                    "category": p.get("category", "General"),
+                    "price": p.get("price", 0)
+                })
+        
         return {
             "user_id": user_id,
-            "recommendations": recommended,
-            "method": "collaborative_filtering"
+            "recommendations": recommended[:top_n],
+            "method": "collaborative_filtering",
+            "similar_users_count": len(similar_users)
         }
-
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error generating recommendations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")
