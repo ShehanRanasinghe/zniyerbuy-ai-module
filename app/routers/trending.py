@@ -1,62 +1,142 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 import pandas as pd
+from app.database import get_products, get_user_interactions
+from typing import Optional
 
 router = APIRouter()
 
-# Mock product view/purchase frequency data
-trending_data = [
-    {"product_id": 103, "name": "Green Tomatoes 1kg", "category": "Vegetables", "price": 220, "views": 520, "purchases": 330},
-    {"product_id": 108, "name": "Gotukola Bundles", "category": "Vegetables", "price": 60, "views": 480, "purchases": 310},
-    {"product_id": 101, "name": "Samba Rice 5kg", "category": "Rice & Grains", "price": 1450, "views": 450, "purchases": 280},
-    {"product_id": 107, "name": "Dhal 1kg", "category": "Rice & Grains", "price": 420, "views": 420, "purchases": 260},
-    {"product_id": 106, "name": "Coconut Oil 500ml", "category": "Cooking Oils", "price": 760, "views": 390, "purchases": 240},
-    {"product_id": 104, "name": "Anchor Milk Powder 400g", "category": "Dairy", "price": 1890, "views": 360, "purchases": 220},
-    {"product_id": 105, "name": "Kurakkan Flour 1kg", "category": "Rice & Grains", "price": 560, "views": 340, "purchases": 200},
-    {"product_id": 102, "name": "Ceylon Pepper 100g", "category": "Spices", "price": 380, "views": 310, "purchases": 180},
-]
-
 @router.get("/products")
-def get_trending_products(limit: int = 5, category: str = None):
+def get_trending_products(limit: int = 5, category: Optional[str] = None):
+    """
+    Get trending products based on views, favorites, and recent activity.
+    Trending score = views + (favorites * 2) + (purchases * 3)
+    """
     try:
-        data = trending_data.copy()
-
+        # Fetch products from Supabase
+        products_data = get_products()
+        
+        if not products_data or len(products_data) == 0:
+            raise HTTPException(status_code=503, detail="No products available in database")
+        
+        # Filter by category if specified
         if category:
-            data = [p for p in data if p["category"].lower() == category.lower()]
-
-        # Calculate trending score (views + purchases * 2)
-        for product in data:
-            product["trending_score"] = product["views"] + (product["purchases"] * 2)
-
+            products_data = [
+                p for p in products_data 
+                if p.get("category", "").lower() == category.lower()
+            ]
+            
+            if not products_data:
+                return {
+                    "trending_products": [],
+                    "method": "engagement_analysis",
+                    "total": 0,
+                    "note": f"No products found in category: {category}"
+                }
+        
+        # Calculate trending score for each product
+        trending_products = []
+        for product in products_data:
+            views = product.get("views", 0)
+            favorites = product.get("favorites_count", 0)
+            # Estimate purchases from interaction data or use a default
+            purchases = product.get("purchase_count", 0)
+            
+            trending_score = views + (favorites * 2) + (purchases * 3)
+            
+            trending_products.append({
+                "product_id": product["id"],
+                "name": product.get("name", "Unknown"),
+                "category": product.get("category", "General"),
+                "price": product.get("price", 0),
+                "views": views,
+                "favorites": favorites,
+                "purchases": purchases,
+                "trending_score": trending_score,
+                "average_rating": product.get("average_rating", 0)
+            })
+        
         # Sort by trending score
-        data.sort(key=lambda x: x["trending_score"], reverse=True)
-
+        trending_products.sort(key=lambda x: x["trending_score"], reverse=True)
+        
         return {
-            "trending_products": data[:limit],
-            "method": "frequency_analysis",
-            "total": len(data)
+            "trending_products": trending_products[:limit],
+            "method": "engagement_analysis",
+            "total": len(trending_products),
+            "category_filter": category if category else "all"
         }
-
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error fetching trending products: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trending products: {str(e)}")
 
 @router.get("/categories")
 def get_trending_categories():
+    """
+    Get trending categories based on aggregate product engagement.
+    """
     try:
-        df = pd.DataFrame(trending_data)
+        # Fetch products from Supabase
+        products_data = get_products()
+        
+        if not products_data or len(products_data) == 0:
+            raise HTTPException(status_code=503, detail="No products available in database")
+        
+        # Convert to DataFrame for easier aggregation
+        df = pd.DataFrame(products_data)
+        
+        # Ensure required columns exist
+        if 'category' not in df.columns:
+            return {
+                "trending_categories": [],
+                "note": "Category information not available"
+            }
+        
+        # Fill missing values
+        df['views'] = df.get('views', 0).fillna(0)
+        df['favorites_count'] = df.get('favorites_count', 0).fillna(0)
+        
+        # Group by category and aggregate
         category_stats = df.groupby("category").agg(
             total_views=("views", "sum"),
-            total_purchases=("purchases", "sum"),
-            product_count=("product_id", "count")
+            total_favorites=("favorites_count", "sum"),
+            product_count=("id", "count"),
+            avg_price=("price", "mean")
         ).reset_index()
-
+        
+        # Calculate trending score
         category_stats["trending_score"] = (
-            category_stats["total_views"] + category_stats["total_purchases"] * 2
+            category_stats["total_views"] + 
+            category_stats["total_favorites"] * 2
         )
+        
+        # Sort by trending score
         category_stats = category_stats.sort_values("trending_score", ascending=False)
-
+        
+        # Convert to dict
+        trending_categories = category_stats.to_dict(orient="records")
+        
+        # Format the response
+        formatted_categories = []
+        for cat in trending_categories:
+            formatted_categories.append({
+                "category": cat["category"],
+                "total_views": int(cat["total_views"]),
+                "total_favorites": int(cat["total_favorites"]),
+                "product_count": int(cat["product_count"]),
+                "avg_price": round(float(cat["avg_price"]), 2),
+                "trending_score": int(cat["trending_score"])
+            })
+        
         return {
-            "trending_categories": category_stats.to_dict(orient="records")
+            "trending_categories": formatted_categories,
+            "method": "category_aggregation",
+            "total_categories": len(formatted_categories)
         }
-
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error fetching trending categories: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trending categories: {str(e)}")
