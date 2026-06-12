@@ -125,15 +125,15 @@ async def startup_event():
     Performs initial health checks and setup.
     """
     print("=" * 50)
-    print("ZniyerBuy AI Module Starting...")
+    print("ZniyerBuy AI Module Starting")
     print("=" * 50)
     
     # Check database connection
     db_health = health_check()
     if db_health["status"] == "connected":
-        print("✓ Database connection: OK")
+        print("Database Connected Successfully.")
     else:
-        print(f"✗ Database connection: FAILED - {db_health.get('error', 'Unknown error')}")
+        print(f"Database connection: FAILED - {db_health.get('error', 'Unknown error')}")
     
     print("=" * 50)
     print("AI Module Ready!")
@@ -148,5 +148,5 @@ async def shutdown_event():
     Performs cleanup operations.
     """
     print("=" * 50)
-    print("ZniyerBuy AI Module Shutting Down...")
+    print("ZniyerBuy AI Module Shutting Down.")
     print("=" * 50)
