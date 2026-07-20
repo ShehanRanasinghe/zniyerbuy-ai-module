@@ -5,6 +5,13 @@ An intelligent recommendation and analytics service powered by machine learning 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Prediction Models](#prediction-models)
+  - [Model Inventory](#model-inventory)
+  - [Dataset](#dataset)
+  - [File Structure](#file-structure)
+  - [How to Train Models](#how-to-train-models)
+  - [Model Details](#model-details)
+  - [Revenue Proxy Price Table](#revenue-proxy-price-table)
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
 - [Core Features](#core-features)
@@ -32,15 +39,13 @@ The ZniyerBuy AI Module is a FastAPI-based microservice that provides intelligen
 - **Real-time Processing** - Fast API responses with efficient data processing
 - **Scalable Architecture** - Stateless design for horizontal scaling
 
-# ZniyerBuy AI — Prediction Models Documentation
+---
 
-## Overview
+## Prediction Models
 
 This module contains **6 machine learning models** that power the *"Predictions for Next Month"* dashboard panel. Each model is trained on the Instacart-style grocery order dataset located in `/data` and saved as an independent `.pkl` file for clean API integration.
 
----
-
-## Model Inventory
+### Model Inventory
 
 | # | Model File | Notebook | Algorithm | Target |
 |---|---|---|---|---|
@@ -53,7 +58,7 @@ This module contains **6 machine learning models** that power the *"Predictions 
 
 ---
 
-## Dataset
+### Dataset
 
 | File | Rows | Description |
 |---|---|---|
@@ -68,18 +73,12 @@ This module contains **6 machine learning models** that power the *"Predictions 
 
 ---
 
-## File Structure
+### File Structure
 
 ```
 zniyerbuy-ai-module/
 ├── data/                               # Raw CSV datasets (read-only)
 ├── models/                             # Trained .pkl model files (output)
-│   ├── revenue_predictor.pkl
-│   ├── daily_revenue_predictor.pkl
-│   ├── user_traffic_predictor.pkl
-│   ├── top_category_classifier.pkl
-│   ├── daily_revenue_forecast.pkl
-│   └── category_sales_predictor.pkl
 ├── notebooks/                          # Jupyter training notebooks
 │   ├── 00_data_exploration.ipynb       # EDA & shared reference
 │   ├── 01_revenue_prediction.ipynb
@@ -88,28 +87,31 @@ zniyerbuy-ai-module/
 │   ├── 04_top_category_classifier.ipynb
 │   ├── 05_daily_revenue_forecast.ipynb
 │   └── 06_category_sales_prediction.ipynb
+├── app/                                # FastAPI application routes
 ├── verify_models.py                    # Script to validate all saved models
-└── README_MODELS.md                    # This file
+├── main.py                             # FastAPI entry point
+├── requirements.txt                    # Python dependencies
+└── README.md                           # This file
 ```
 
 ---
 
-## How to Train Models
+### How to Train Models
 
-### 1. Activate the virtual environment
+#### 1. Activate the virtual environment
 
 ```bash
 # Windows
 .\venv\Scripts\activate
 ```
 
-### 2. Install required libraries
+#### 2. Install required libraries
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Run notebooks in order
+#### 3. Run notebooks in order
 
 Open each notebook in Jupyter and run all cells top-to-bottom:
 
@@ -119,7 +121,7 @@ jupyter notebook notebooks/
 
 Run in order: `00` → `01` → `02` → `03` → `04` → `05` → `06`
 
-### 4. Verify all models saved correctly
+#### 4. Verify all models saved correctly
 
 ```bash
 python verify_models.py
@@ -127,62 +129,52 @@ python verify_models.py
 
 ---
 
-## Model Details
+### Model Details
 
-### 1. Revenue Predictor (`revenue_predictor.pkl`)
+#### 1. Revenue Predictor (`revenue_predictor.pkl`)
 
 - **Algorithm**: `RandomForestRegressor(n_estimators=300, min_samples_leaf=2)`
 - **Features**: Monthly total orders, items, unique users, avg reorder rate, items/order, lag revenue, lag orders, lag users, revenue growth rate
 - **Target**: Next month's total revenue (Rs.)
 - **Evaluation**: RMSE (Rs.), MAE (Rs.), R², 5-fold CV R²
 
-**API Usage:**
 ```python
-import joblib, numpy as np
+import joblib
 model = joblib.load('models/revenue_predictor.pkl')
 features = [[total_orders, total_items, unique_users, avg_reorder,
              items_per_order, prev_revenue, prev_orders, prev_users, growth_rate]]
 predicted_revenue = model.predict(features)[0]
 ```
 
----
-
-### 2. Daily Revenue Predictor (`daily_revenue_predictor.pkl`)
+#### 2. Daily Revenue Predictor (`daily_revenue_predictor.pkl`)
 
 - **Algorithm**: `GradientBoostingRegressor(n_estimators=300, learning_rate=0.05, max_depth=4)`
 - **Features**: Day of week, order count, item count, reorder rate, avg hour, items/order, prev same-DOW revenue, DOW growth rate
 - **Target**: Average daily revenue for next month (Rs.)
 
-**API Usage:**
 ```python
 model = joblib.load('models/daily_revenue_predictor.pkl')
 avg_daily = model.predict([[dow, orders, items, reorder, hour, ipo, prev_rev, growth]])[0]
 ```
 
----
-
-### 3. User Traffic Predictor (`user_traffic_predictor.pkl`)
+#### 3. User Traffic Predictor (`user_traffic_predictor.pkl`)
 
 - **Algorithm**: `Pipeline(StandardScaler → PolynomialFeatures(2) → Ridge)` with GridSearchCV alpha tuning
 - **Features**: Previous month users, 2-month lag users, user growth rate, 3-month rolling avg, prev orders, avg days between orders, orders per user
 - **Target**: Number of unique active users next month
 
-**API Usage:**
 ```python
 model = joblib.load('models/user_traffic_predictor.pkl')
 users = int(model.predict([[prev_users, prev2_users, growth, rolling, prev_orders, days_between, freq]])[0])
 ```
 
----
-
-### 4. Top Category Classifier (`top_category_classifier.pkl`)
+#### 4. Top Category Classifier (`top_category_classifier.pkl`)
 
 - **Algorithm**: `RandomForestClassifier(n_estimators=500, class_weight='balanced')` + `LabelEncoder`
 - **Saved as**: Dict bundle `{model, label_encoder, feature_cols, dept_map}`
 - **Features**: Monthly revenue per dept + previous month revenue per dept + growth per dept
 - **Target**: Department ID of highest-revenue category next month
 
-**API Usage:**
 ```python
 bundle = joblib.load('models/top_category_classifier.pkl')
 pred_label = bundle['model'].predict([features])[0]
@@ -190,15 +182,12 @@ dept_id = int(bundle['label_encoder'].inverse_transform([pred_label])[0])
 dept_name = bundle['dept_map'][dept_id]
 ```
 
----
-
-### 5. Daily Revenue Forecast (`daily_revenue_forecast.pkl`)
+#### 5. Daily Revenue Forecast (`daily_revenue_forecast.pkl`)
 
 - **Algorithm**: `ARIMA(5, 1, 2)` from `statsmodels`
 - **Saved as**: Dict bundle `{model_result, forecast_30_days, avg_daily, total_forecast, ...}`
 - **Target**: List of 30 daily revenue values for the next month (Rs.)
 
-**API Usage:**
 ```python
 bundle = joblib.load('models/daily_revenue_forecast.pkl')
 forecast_30 = bundle['forecast_30_days']   # list of 30 float values
@@ -206,26 +195,21 @@ avg_daily   = bundle['avg_daily']
 total       = bundle['total_forecast']
 ```
 
----
-
-### 6. Category Sales Predictor (`category_sales_predictor.pkl`)
+#### 6. Category Sales Predictor (`category_sales_predictor.pkl`)
 
 - **Algorithm**: `MultiOutputRegressor(RandomForestRegressor(n_estimators=200))` — one RF per department
 - **Saved as**: Dict bundle `{model, feature_cols, unit_cols, departments, last_month_units, next_month_pred}`
 - **Target**: Unit sales for all 21 departments next month (vector output)
 
-**API Usage:**
 ```python
 bundle = joblib.load('models/category_sales_predictor.pkl')
-# Pre-computed prediction already in bundle:
 next_preds = bundle['next_month_pred']  # dict: dept_N_units -> predicted_units
-# OR real-time predict:
-preds = bundle['model'].predict([features])[0]
+preds = bundle['model'].predict([features])[0]  # real-time predict
 ```
 
 ---
 
-## Revenue Proxy Price Table
+### Revenue Proxy Price Table
 
 | Department | Avg Price (Rs.) |
 |---|---|
@@ -245,6 +229,7 @@ preds = bundle['model'].predict([features])[0]
 | Meat/Seafood | 700 |
 | Alcohol | 800 |
 
+---
 
 ## Architecture
 
