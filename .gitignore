@@ -1,6 +1,64 @@
-venv/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# ML Model Outputs (large binary files — train locally) 
+#models/*.pkl
+models/*.h5
+models/*.pt
+models/*.joblib
+models/*.onnx
+models/*.png
+# Keep chart PNGs generated during training
+#!models/*.png
+
+# Raw Dataset Files (large — distribute separately) 
 data/
 *.csv
-*.log
+*.parquet
+*.feather
+*.hdf5
+
+# Environment & Secrets 
 .env
+.env.*
+*.key
+secrets.json
+
+# Logs & Temp
+*.log
+*.tmp
+*.bak
+logs/
+tmp/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# OS
+desktop.ini
