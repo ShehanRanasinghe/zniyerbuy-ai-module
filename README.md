@@ -58,7 +58,7 @@ Each prediction lives in its own file under `app/services/`, built from a shop's
 ---
 
 ## 🏗️ System Architecture
-
+```text
 ┌─────────────────────────────────────────┐
 │         FastAPI Application             │
 │  ┌───────────────────────────────────┐  │
@@ -96,7 +96,7 @@ Each prediction lives in its own file under `app/services/`, built from a shop's
 │  - Product catalog                      │
 │  - Orders (per-shop revenue history)    │
 └─────────────────────────────────────────┘
-
+```
 ---
 
 ## 🛠️ Technology Stack
