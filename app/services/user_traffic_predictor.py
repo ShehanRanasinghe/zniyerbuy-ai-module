@@ -61,4 +61,8 @@ def predict_expected_users(orders: List[Dict]) -> Dict:
     expected = round(trailing_customers * (1 + growth))
     expected = max(expected, trailing_customers, 0)
 
-    return {"status": "ok", "expected_users": expected}
+    return {
+        "status": "ok",
+        "expected_users": expected,
+        "expected_users_growth_pct": round(growth * 100, 1),
+    }
