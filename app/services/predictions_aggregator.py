@@ -29,8 +29,10 @@ def build_shop_predictions(orders: List[Dict], products: List[Dict]) -> Dict:
             "message": "Not enough order history yet to generate predictions. "
                        "Predictions unlock once this shop has a few completed orders.",
             "predicted_revenue": None,
+            "predicted_revenue_growth_pct": None,
             "predicted_daily_revenue": None,
             "expected_users": None,
+            "expected_users_growth_pct": None,
             "top_category": None,
             "top_category_predicted_sales": None,
             "daily_revenue_forecast": [],
@@ -48,8 +50,10 @@ def build_shop_predictions(orders: List[Dict], products: List[Dict]) -> Dict:
     return {
         "status": "ok",
         "predicted_revenue": revenue["predicted_revenue"],
+        "predicted_revenue_growth_pct": revenue["revenue_growth_pct"],
         "predicted_daily_revenue": daily_avg["predicted_daily_revenue"],
         "expected_users": users["expected_users"],
+        "expected_users_growth_pct": users["expected_users_growth_pct"],
         "top_category": top_category["top_category"],
         "top_category_predicted_sales": top_category["top_category_predicted_sales"],
         "daily_revenue_forecast": forecast["daily_revenue_forecast"],
