@@ -41,4 +41,5 @@ def predict_next_month_revenue(orders: List[Dict]) -> Dict:
         "predicted_revenue": predicted_revenue,
         "confidence": result["confidence"],
         "history_days": result["history_days"],
+        "revenue_growth_pct": round(result["revenue_growth"] * 100, 1),
     }
