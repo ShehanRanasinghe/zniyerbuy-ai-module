@@ -76,11 +76,18 @@ def compute_daily_forecast(orders: List[Dict]) -> Optional[Dict]:
         forecast = [max(0.0, v * scale) for v in raw_forecast]
         confidence = "high" if r2 >= 0.3 else "medium"
 
+    predicted_avg_daily = sum(forecast) / len(forecast) if forecast else 0.0
+    revenue_growth = (
+        (predicted_avg_daily - trailing_avg) / trailing_avg
+        if trailing_avg > 0 else 0.0
+    )
+
     return {
         "forecast": forecast,
         "confidence": confidence,
         "history_days": history_days,
         "trailing_avg_daily_revenue": trailing_avg,
+        "revenue_growth": revenue_growth,  # fraction, e.g. 0.162 == +16.2%
     }
 
 
