@@ -1,12 +1,12 @@
 # 🤖 ZniyerBuy AI Module
 
-An intelligent recommendation and analytics microservice powered by machine learning. It provides personalized product recommendations, demand predictions, trending category/product insights, and predictive forecasting for the ZniyerBuy marketplace.
+An intelligent recommendation and analytics microservice powered by machine learning. It provides personalized product recommendations, demand predictions, trending category/product insights, admin insights, and **live per-shop next-month predictions** for the ZniyerBuy marketplace.
 
 ---
 
 ## 📋 Table of Contents
 - [Core Features](#-core-features)
-- [Machine Learning & Prediction Models](#-machine-learning--prediction-models)
+- [Live Shop Predictions](#-live-shop-predictions)
 - [System Architecture](#-system-architecture)
 - [Technology Stack](#-technology-stack)
 - [Installation & Setup](#-installation--setup)
@@ -29,28 +29,36 @@ An intelligent recommendation and analytics microservice powered by machine lear
 4. **Automated Admin Insights**
    - Rule-based analytics generating actionable recommendations regarding seller onboarding, quality issues, and user engagement.
 
+5. **Live Shop Predictions**
+   - Next-month revenue, daily revenue, expected users, top category, a 30-day forecast, and category outlook — computed fresh from each shop's real Supabase orders/products on every request. See below.
+
 ---
 
-## 🧠 Machine Learning & Prediction Models
+## 🔮 Live Shop Predictions
 
-The AI module uses **6 dedicated ML models** to generate forecasts for the dashboard:
+Powers the seller Analytics page's "AI-Powered Predictions for Next Month" section via `GET /predictions/shop/{shop_id}`.
 
-| # | Model File | Notebook | Algorithm | Target |
-|---|---|---|---|---|
-| 1 | `revenue_predictor.pkl` | `01_revenue_prediction.ipynb` | Random Forest Regressor | Next month total revenue (Rs.) |
-| 2 | `daily_revenue_predictor.pkl` | `02_daily_revenue_avg.ipynb` | Gradient Boosting Regressor | Average daily revenue (Rs.) |
-| 3 | `user_traffic_predictor.pkl` | `03_user_traffic_prediction.ipynb` | Ridge Regression + Polynomials | Expected active users next month |
-| 4 | `top_category_classifier.pkl` | `04_top_category_classifier.ipynb` | Random Forest Classifier | Top category by revenue |
-| 5 | `daily_revenue_forecast.pkl` | `05_daily_revenue_forecast.ipynb` | ARIMA(5,1,2) | 30-day forecasted daily revenue |
-| 6 | `category_sales_predictor.pkl` | `06_category_sales_prediction.ipynb` | Multi-Output Random Forest | Next month sales across 21 categories |
+Each prediction lives in its own file under `app/services/`, built from a shop's real order/product history — **no pre-trained model, no external dataset, no training step**. Numbers update every time the endpoint is called.
 
-*Note: Since the raw dataset has no pricing, revenue models use a deterministic average price proxy per department (e.g. Produce = Rs. 150, Dairy = Rs. 300, Meat = Rs. 700).*
+| # | Prediction | File | Method |
+|---|---|---|---|
+| 1 | Predicted Revenue (next month total) | `app/services/revenue_predictor.py` | Sum of the 30-day forecast |
+| 2 | Daily Revenue (average per day) | `app/services/daily_revenue_avg.py` | Average of the 30-day forecast |
+| 3 | Expected Users | `app/services/user_traffic_predictor.py` | Trailing 30-day distinct customers × clamped growth rate |
+| 4 | Next Month Top Category | `app/services/top_category_classifier.py` | Top row of the category outlook |
+| 5 | Daily Revenue Forecast (30-day series) | `app/services/daily_revenue_forecast.py` | Daily bucketing → 7-day rolling mean → linear trend → clamped growth |
+| 6 | Category Sales Prediction | `app/services/category_sales_prediction.py` | Catalog composition + engagement (views/favorites/recommendation_score), labeled `catalog_engagement_proxy` |
+
+`app/services/shared.py` holds the common date/math helpers (used by every module above); `app/services/predictions_aggregator.py` combines all 6 into the API response.
+
+**Why no ML model files:** the previous version of this module trained 6 scikit-learn/statsmodels models on the public Instacart grocery dataset (`legacy/notebooks/`, `legacy/models/`). That dataset has no concept of "shop," predicts among 21 grocery departments unrelated to real marketplace categories, and produced one static number shared by every shop on the platform. The current approach computes directly from each shop's own data instead. For shops with thin order history, predictions fall back to a flat/naive projection (`confidence: "low"`) rather than fabricating a trend, and shops under 3 orders get `status: "no_data"` instead of a guess.
+
+**Validating it:** `notebooks/00_validate_predictions.ipynb` imports the 6 modules directly and checks them against synthetic data plus (optionally) a real `shop_id`. Run it any time you touch `app/services/`.
 
 ---
 
 ## 🏗️ System Architecture
 
-```
 ┌─────────────────────────────────────────┐
 │         FastAPI Application             │
 │  ┌───────────────────────────────────┐  │
@@ -61,25 +69,33 @@ The AI module uses **6 dedicated ML models** to generate forecasts for the dashb
 │  │   - /recommendations              │  │
 │  │   - /demand                       │  │
 │  │   - /trending                     │  │
-│  │   - /insights                     │  │
+│  │   - /insights                     │  │   
+│  │   - /predictions                  │  │
 │  └───────────────────────────────────┘  │
 └─────────┬───────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────┐
-│      Machine Learning Pipeline          │
-│  ┌───────────────────────────────────┐  │
-│  │   Scikit-Learn Models & ARIMA     │  │
-│  └───────────────────────────────────┘  │
+│      app/services/ (live predictions)   │ 
+│ ┌───────────────────────────────────┐   │
+│ │ revenue_predictor.py              │   │
+│ │ daily_revenue_avg.py              │   │
+│ │ daily_revenue_forecast.py         │   │
+│ │ user_traffic_predictor.py         │   │
+│ │ top_category_classifier.py        │   │
+│ │ category_sales_prediction.py      │   │
+│ │ predictions_aggregator.py         │   │
+│ └───────────────────────────────────┘   │
+│ + Scikit-Learn (recommendations/demand) │
 └─────────┬───────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────┐
 │         Supabase Database               │
 │  - User interactions & views            │
-│  - Product catalog & sales history      │
+│  - Product catalog                      │
+│  - Orders (per-shop revenue history)    │
 └─────────────────────────────────────────┘
-```
 
 ---
 
@@ -87,7 +103,7 @@ The AI module uses **6 dedicated ML models** to generate forecasts for the dashb
 - **Framework:** FastAPI (Uvicorn ASGI)
 - **Database Client:** Supabase SDK
 - **Data Manipulation:** Pandas, NumPy
-- **Machine Learning:** Scikit-Learn, Statsmodels, Joblib
+- **Machine Learning:** Scikit-Learn (recommendations & demand only)
 
 ---
 
@@ -128,15 +144,13 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 Verify the server status at `http://localhost:8000/health`.
 
-### 5. Running Model Training & Verification
-Training notebooks are located in the `notebooks/` directory. Run them sequentially (`00` to `06`) inside Jupyter:
+### 5. Validating the Prediction Modules
+No dataset download or training step needed. Run the validation notebook:
 ```bash
-jupyter notebook notebooks/
+jupyter notebook notebooks/00_validate_predictions.ipynb
 ```
-Verify that all serialized models are loaded and functioning correctly:
-```bash
-python verify_models.py
-```
+
+*Note: `legacy/notebooks/`, `legacy/models/`, and `legacy/verify_models.py` contain the previous Instacart-trained approach, kept for reference only and no longer used by the running app.*
 
 ---
 
@@ -156,7 +170,8 @@ Interactive API documents are served directly by FastAPI:
 | `/trending/products` | `GET` | Returns top-performing products by engagement score |
 | `/trending/categories` | `GET` | Returns top-performing categories by engagement score |
 | `/insights` | `GET` | Generates diagnostic insights for administrators |
+| `/predictions/shop/{shop_id}` | `GET` | Live next-month predictions for one shop (revenue, daily revenue, users, top category, 30-day forecast, category outlook) |
 
 ---
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Maintained By:** ZniyerBuy Development Team
