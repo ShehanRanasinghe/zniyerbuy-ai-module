@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import recommendations, demand, trending, insights
+from app.routers import recommendations, demand, trending, insights, predictions
 from app.database import health_check
 import time
 import os
@@ -68,6 +68,7 @@ app.include_router(recommendations.router, prefix="/recommendations", tags=["Rec
 app.include_router(demand.router, prefix="/demand", tags=["Demand Prediction"])
 app.include_router(trending.router, prefix="/trending", tags=["Trending Analysis"])
 app.include_router(insights.router, prefix="/insights", tags=["Admin Insights"])
+app.include_router(predictions.router, prefix="/predictions", tags=["AI Predictions"])
 
 @app.get("/", tags=["Health"])
 def root():
@@ -85,6 +86,7 @@ def root():
             "trending_products": "/trending/products",
             "trending_categories": "/trending/categories",
             "admin_insights": "/insights/generate",
+            "shop_predictions": "/predictions/shop/{shop_id}",
             "health_check": "/health",
             "documentation": "/docs"
         }
