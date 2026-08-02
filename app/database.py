@@ -157,6 +157,27 @@ def get_user_favorites(user_id: str) -> List[Dict]:
         print(f"Error fetching user favorites: {e}")
         return []
 
+def get_user_interests(user_id: str) -> List[Dict]:
+    """
+    Fetch a user's category interest scores from Supabase, highest score
+    first. Populated by the Node backend's update_user_interest RPC every
+    time the user views a product (see recommendation.service.js
+    trackProductView on the backend). Used by /recommendations/products
+    to personalize results.
+    """
+    try:
+        response = supabase.table("user_interests") \
+            .select("category, score") \
+            .eq("user_id", user_id) \
+            .order("score", desc=True) \
+            .execute()
+
+        return response.data or []
+
+    except Exception as e:
+        print(f"Error fetching user interests for {user_id}: {e}")
+        return []
+
 def health_check() -> Dict:
     """
     Check database connection health.
