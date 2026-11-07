@@ -157,6 +157,27 @@ def get_user_favorites(user_id: str) -> List[Dict]:
         print(f"Error fetching user favorites: {e}")
         return []
 
+def get_user_interests(user_id: str) -> List[Dict]:
+    """
+    Fetch a user's category interest scores from Supabase, highest score
+    first. Populated by the Node backend's update_user_interest RPC every
+    time the user views a product (see recommendation.service.js
+    trackProductView on the backend). Used by /recommendations/products
+    to personalize results.
+    """
+    try:
+        response = supabase.table("user_interests") \
+            .select("category, score") \
+            .eq("user_id", user_id) \
+            .order("score", desc=True) \
+            .execute()
+
+        return response.data or []
+
+    except Exception as e:
+        print(f"Error fetching user interests for {user_id}: {e}")
+        return []
+
 def health_check() -> Dict:
     """
     Check database connection health.
@@ -181,3 +202,41 @@ def health_check() -> Dict:
             "error": str(e),
             "tables_accessible": False
         }
+
+def get_orders_by_shop(shop_id: str) -> List[Dict]:
+    """
+    Fetch all orders for a single shop from Supabase.
+    Used by the /predictions router to build live, per-shop forecasts.
+    Returns list of order records with total_amount, status, customer_phone,
+    customer_name, and created_at.
+    """
+    try:
+        response = supabase.table("orders") \
+            .select("id, total_amount, status, customer_phone, customer_name, created_at") \
+            .eq("shop_id", shop_id) \
+            .execute()
+
+        return response.data or []
+
+    except Exception as e:
+        print(f"Error fetching orders for shop {shop_id}: {e}")
+        return []
+
+def get_products_by_shop(shop_id: str) -> List[Dict]:
+    """
+    Fetch all products for a single shop from Supabase.
+    Used by the /predictions router to build the category outlook.
+    Returns list of product records with category, views, favorites_count,
+    average_rating, and recommendation_score.
+    """
+    try:
+        response = supabase.table("products") \
+            .select("id, category, views, favorites_count, average_rating, recommendation_score") \
+            .eq("shop_id", shop_id) \
+            .execute()
+
+        return response.data or []
+
+    except Exception as e:
+        print(f"Error fetching products for shop {shop_id}: {e}")
+        return []
